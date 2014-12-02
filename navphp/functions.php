@@ -420,11 +420,6 @@ $user = substr(strrchr( $_SESSION['homedir'], "/"), 1 );
             }
         }
 
-        $out = array();
-        exec("/home/ubuntu/dcac/user/bin/show", $out);
-        foreach($out as $line) {
-        }
-
       // Set ACLs for creation of new files
       if (dcac_set_def_rdacl($user_attr) < 0)
          nice_die('dcac_set_def_rdacl');
