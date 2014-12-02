@@ -18,3 +18,20 @@ Installation Instructions
 8) Add php wrapper to `dcac.h` compiled through SWIG as a php module (Available on Request).
 
 9) Copy `navphp` to `/var/www` and restart apache.
+
+Performance Tests
+-----------------
+
+|Test case | W/o DCAC | W DCAC | Slowdown |
+| --- | --- | --- | --- |
+|Login | 0.6s | 3.58s | 5.97X |
+|View Directory (ls) | 1.48s | 6.9s | 4.66X |
+|View File (cat) | 0.6s | 2.56s | 4.26X |
+|Create new File | 0.6s | 3.58s | 5.97X |
+|Access shared File | 0.51s | 2.84s | 4.98X |
+
+PS: The Machine which ran with DCAC was not totally comparable with the machine running w/o DCAC. The former was the guest Qemu machine and the latter was the host machine. Even running a quicksort algorithm was slower on the qemu machine by 6X.
+
+|Test case | W/o DCAC | W DCAC | Slowdown |
+| --- | --- | --- | --- |
+|QuickSort | 1.8s | 12.5s | 6.25X |
