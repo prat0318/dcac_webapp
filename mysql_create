@@ -1,0 +1,14 @@
+CREATE TABLE `navphp_users` (
+`user` VARCHAR( 20 ) NOT NULL ,
+`passwd` VARCHAR( 20 ) NOT NULL ,
+`homedir` VARCHAR( 255 ) NOT NULL ,
+`rdonly` INT NOT NULL
+) ENGINE=MYISAM;
+
+CREATE TABLE `navphp_groups` (
+`user` varchar(20) not null,
+`group` varchar(20) not null,
+`owner` varchar(20) not null,
+CONSTRAINT uc_PersonID unique(`user`, `group`, `owner`)
+)Engine=MYISAM;
+

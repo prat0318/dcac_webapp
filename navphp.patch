@@ -1,0 +1,625 @@
+diff -rupwN navphp4.44/explore.php navphp/explore.php
+--- navphp4.44/explore.php	2011-12-10 15:23:00.000000000 -0600
++++ navphp/explore.php	2014-12-01 17:36:29.000000000 -0600
+@@ -16,7 +16,8 @@
+ 
+ function explore($dir)
+ {
+-global $cols, $uploads,$i, $dir_relative;
++global $msg, $user, $cols, $uploads,$i, $dir_relative;
++ $warning="<img src=images/warning.gif style='margin-top:-4px;'>";
+ print"<table cellspacing=8  id=filestable><tr class=center>";
+      
+ if (is_dir($dir)) 
+@@ -71,9 +72,10 @@ if($file!="."&&$file!=".."&&!is_dir($fil
+    }
+   closedir($dh);
+   }
++ else $msg[]= "$warning Can't read the Directory $dir!";
+  }
+ else
+- $msg[]= "Directory $dir does not exist!";
++ $msg[]= "$warning Directory $dir does not exist!";
+ $total = count($files)-2;
+ $perms = decoct(fileperms($file)%01000);
+ print"</table><input type=hidden name=total value='$total'>
+diff -rupwN navphp4.44/functions.php navphp/functions.php
+--- navphp4.44/functions.php	2011-12-10 17:20:16.000000000 -0600
++++ navphp/functions.php	2014-12-01 17:23:58.000000000 -0600
+@@ -118,6 +118,16 @@ function view($file,$dir)	//for unsuppor
+  global $msg, $max_edit_size, $deflate, $dir_relative, $view_charset;
+  if(filesize("$dir/$file")>$max_edit_size) 
+   print"File size exceeds the limit of $max_edit_size bytes<br>Have the Site Admin edit config.php to customize this";
++ elseif(file_get_contents("$dir/$file")===false) {
++  print"<b>$dir_relative/$file</b><center>";
++     print("Not allowed to read this file!");
++  print("<style>body{background-color:ThreeDFace;}</style>
++		<form action='?dir=".base64_encode($dir_relative)."&file=".base64_encode($file)."' method=POST>
++       <input type=hidden name=dir value='".base64_encode($dir_relative)."'>
++       <input type=hidden name=file value='".base64_encode($file)."'><br>
++       <input type=button onClick='location.href=\"?dir=\"+this.form.dir.value;' value=Exit></form>
++       ");
++ }
+  else
+   {
+   print"<b>$dir_relative/$file</b><center>";
+@@ -214,7 +224,7 @@ function fileicon($file)
+  if($pos!=0) $up = substr($dir,0,-(strlen($dir)-$pos));
+  else $up="/";
+  
+- if(strpos($up,$homedir)!==0) $up=$homedir; #restrict to home dir!
++ // if(strpos($up,$homedir)!==0) $up=$homedir; #restrict to home dir!
+  chdir($up); 
+  
+  
+@@ -240,6 +250,7 @@ function printbuttons($dir,$i) 
+  <img width=1 height=24 class=seperator>
+  <img src=images/newfolder.gif  onClick='newfolder(f)' class=button title='New Folder [Shift+Ctrl+N]'>
+  <img src=images/newfile.gif  onClick='newfile(f)' class=button title='New File [Shift+Ctrl+F]'>
++ <img src=images/newfile.gif  onClick='share(f)' class=button title='Share [Shift+Ctrl+S]'>
+  <img width=1 height=24 class=seperator>";
+  if($i==0) print"<select name='mode' style='margin-top:2px; vertical-align:top;'>
+   <option value=0777>777</option>
+@@ -369,7 +380,7 @@ function authenticate()
+  
+  verify_login();	//check user auth
+ 
+- global $user, $passwd, $dir, $homedir, $action, $file, $change, $msg, $rdonly, $ajax, $mode,$go,$lang, $dir_relative, $multi_user;
++global $user, $passwd, $dir, $homedir, $action, $file, $change, $msg, $rdonly, $ajax, $mode,$go,$lang, $dir_relative, $multi_user, $groups_path, $group_table, $mysql_server,$mysql_user, $mysql_passwd, $mysql_db;
+  
+ // require_once("lang/$lang.declare.php");
+  
+@@ -377,10 +388,61 @@ function authenticate()
+  $rdonly = $_SESSION['rdonly'];
+  $homedir=realpath($homedir);
+   
+- if(!$dir) $dir="$homedir";
+- else $dir=realpath("$homedir/".base64_decode("$dir"));
++dcac_unlock();
++
++      dcac_set_mask(7);
++$user = substr(strrchr( $_SESSION['homedir'], "/"), 1 );
+  
+- if($go&&!$action) $dir=realpath("$homedir/".urldecode($go));
++      // Ensure no overlap with .apps.navphp.common
++      $user_attr = '.apps.navphp.u.' . $user;
++
++      // Specialize to user, but can still r/w common data
++      dcac_add_any_attr($user_attr, DCAC_ADDMOD);
++      dcac_drop_attr('.apps.navphp');
++
++        error_Log("<__>: '$mysql_server' and '$mysql_user' and  '$mysql_passwd'");
++        mysql_connect($mysql_server,$mysql_user,$mysql_passwd,false) or die("MySQL authentication failure!");
++        mysql_query("use $mysql_db");
++
++        $result = mysql_query("select `group`,`owner` from $group_table where user ='$user' ");
++        //for ($i=0; $i<mysql_num_rows($result)){
++        $rows = array();
++        while($row=mysql_fetch_array($result)){
++            $rows[]=$row;
++        }
++        foreach($rows as $row){ 
++            $groupName=$row['group'];
++            $groupOwner = $row['owner'];
++            //array_push($values, mysql_result($result,$i));
++            $groupFile = $groups_path."/{$groupOwner}/{$groupName}";
++            $fd = dcac_open($groupFile, DCAC_ADDONLY);
++            if ($fd < 0) {
++            }
++        }
++
++        $out = array();
++        exec("/home/ubuntu/dcac/user/bin/show", $out);
++        foreach($out as $line) {
++        }
++
++      // Set ACLs for creation of new files
++      if (dcac_set_def_rdacl($user_attr) < 0)
++         nice_die('dcac_set_def_rdacl');
++      if (dcac_set_def_wracl($user_attr) < 0)
++         nice_die('dcac_set_def_wracl');
++      if (dcac_set_def_exacl($user_attr) < 0)
++         nice_die('dcac_set_def_exacl');
++      if (dcac_set_def_mdacl($user_attr) < 0)
++         nice_die('dcac_set_def_mdacl');
++
++ if(!$dir && !$go) $dir="$homedir";
++ elseif(!$dir)  $dir="$go";
++ //elseif(strpos(base64_decode("$dir"), "/")==0) $dir=realpath(base64_decode("$dir"));
++ //else $dir=realpath("$homedir/".base64_decode("$dir"));
++ else $dir=realpath(base64_decode("$dir"));
++ 
++ //if($go&&!$action) $dir=realpath("$homedir/".urldecode($go));
++ if($go&&!$action) $dir=realpath(urldecode($go));
+   
+ // $file = basename(base64_decode($file));
+  $file = base64_decode($file);
+@@ -391,20 +453,13 @@ function authenticate()
+ 
+  $warning="<img src=images/warning.gif style='margin-top:-4px;'>";
+  
+- if(strpos($dir,$homedir)!==0) 	# restrict to homedir!
+- {
+- $msg[]="$warning<b>Warning: Access restricted to home dir!</b>"; 
+- $dir=$homedir;
+-// chdir($dir);
+- }
+- 
+  if(!is_dir($dir)) {$msg[]="$warning<b>Warning: Reference to invalid directory!</b>"; $dir="$homedir";}
+  
+  if($rdonly&&($action!="Open")&&($action!="Up")&&($action!="Download")&&($mode=="normal")) 
+ 	{ $action="rdonly"; $msg="$warning<b>Warning: Working in read-only mode!<br>The operation was not completed!</b><br>";	}
+ 
+ 
+- $dir_relative = substr($dir,strlen($homedir));
++ $dir_relative = $dir; //substr($dir,strlen($homedir));
+ }  
+ 
+ 
+diff -rupwN navphp4.44/inc/ajax.js navphp/inc/ajax.js
+--- navphp4.44/inc/ajax.js	2011-12-10 01:52:40.000000000 -0600
++++ navphp/inc/ajax.js	2014-12-01 17:05:07.000000000 -0600
+@@ -186,6 +186,23 @@ if(newname)
+  
+ }
+ 
++function share(f)
++{
++if(fname=="") alert("First select a file by clicking on it");
++else{ msg="";
++ newuser=window.prompt("Enter user to share the file with:","user");
++ //groupname=window.prompt("Enter the group name:","group");
++ permission=window.prompt("Enter the permissions to share the file with:","1111");
++ if(newuser)
++  {
++    http.open('post', 'share.php');
++    http.setRequestHeader("Content-Type","application/x-www-form-urlencoded;");
++    http.onreadystatechange = showresult;
++    http.send("file="+fname+"&grpuser="+base64_encode(newuser)+"&perm_changed="+base64_encode(permission)+"&dir="+f.dir.value+"&ajax=1");
++    fo_new=fo;
++   }
++  }
++}
+ function dom_newfolder(file_status)	//fn for new <td> obj & display file_status
+ {
+ var tab=document.getElementById("filestable");
+diff -rupwN navphp4.44/inc/normal.js navphp/inc/normal.js
+--- navphp4.44/inc/normal.js	2011-06-01 01:34:56.000000000 -0500
++++ navphp/inc/normal.js	2014-12-01 17:05:07.000000000 -0600
+@@ -61,6 +61,17 @@ function newfile(f)
+  window.location.href="?action=New file&change="+base64_encode(newname)+"&dir="+f.dir.value;
+ }
+ 
++function share(f)
++{
++if(fname=="") alert("First select a file by clicking on it");
++else{ msg="";
++  newuser=window.prompt("Enter the user to share the file with:","share");
++  permission=window.prompt("Enter the permissions to share the file with:","007");
++  if(newuser)
++  window.location.href="?action=Share&grpuser="+base64_encode(newuser)+"&perm_changed="+base64_encode(permission)+"&dir="+f.dir.value;
++ }
++}
++
+ function extract()
+ {
+ if(fname=="") alert("First select a file by clicking on it");
+diff -rupwN navphp4.44/login.php navphp/login.php
+--- navphp4.44/login.php	2011-06-02 19:19:06.000000000 -0500
++++ navphp/login.php	2014-12-01 17:34:34.000000000 -0600
+@@ -8,10 +8,89 @@
+ # web: navphp.sourceforge.net
+ #---------------------------
+ 
++
++dcac_unlock();
++
++  if (dcac_set_def_rdacl('.apps.navphp.common') < 0)
++     nice_die('dcac_set_def_rdacl (dcac init)');
++  if (dcac_set_def_wracl('.apps.navphp.common') < 0)
++     nice_die('dcac_set_def_wracl (dcac init)');
++  if (dcac_set_def_exacl('.apps.navphp.common') < 0)
++     nice_die('dcac_set_def_exacl (dcac init)');
++
+ session_start();
+ include_once("config.php");
+ include_once("functions.php");
+ 
++function _password_valid($user,$passwd){
++      $descs = array(
++                     0 => array("pipe", "r")
++                     );
++
++      $process = proc_open("unix_chkpwd $user", $descs, $pipes);
++
++      fwrite($pipes[0], $passwd . "\0");
++
++      $return_value = proc_close($process);
++
++      if ($return_value == 0)
++         return true;
++      /* Note: this could be due to an error in accessing the password
++         information, not necessarily an invalid password */
++      return false;
++   }
++
++   function _tryLogon($user,$pass){
++      $rc = false;
++
++      /* This is where we have a mechanism in PHP for a lower-level
++         login, this will cause the OS user to change */
++
++      /* set uid to that of "nobody" if we fail? */
++      $rc = _password_valid($user,$pass);
++      if ($rc) {
++         $pwnam = posix_getpwnam($user);
++         $new_uid = $pwnam["uid"];
++
++         /* see documentation about process supplementary group IDs
++            for where a lot of this nonsense comes from */
++
++         /* it seems you cannot "use the privileges of groups you (via
++            getuid or geteuid) belong to" automatically */
++         if (!posix_initgroups($pwnam['name'],$pwnam['gid'])) {
++            $status = "fail";
++            nice_die("Cannot set groups!");
++
++            /* don't allow "partial success" in logging in, so act
++               like the whole thing failed (the log will tell us the
++               difference) */
++            $rc = false;
++            goto out;
++         } else {
++            $status = "success";
++         }
++
++         if (!posix_setuid($new_uid)) {
++            $status = "fail";
++            nice_die("Cannot set user!");
++
++            /* see above */
++            $rc = false;
++            goto out;
++         } else {
++            $status = "success";
++         }
++      } else {
++      }
++
++   out:
++      return $rc;
++   }
++
++   function checkPass($user,$pass){
++      return _tryLogon($user,$pass);
++   }
++
+ // verifies the login
+ 
+ if(@$_SESSION['loggedin']) 
+@@ -35,6 +114,12 @@ else if(!$multi_user&&($user_i==$user)&&
+ }
+ else if($multi_user)
+ { 
++    if(false) { # Use Mysql auth instead of OS user auth
++
++        $login = checkPass($user_i, $passwd_i);
++        $homedir = "/home/".$user_i;
++
++    } else {
+ 	mysql_connect($mysql_server,$mysql_user,$mysql_passwd) or die("MySQL authentication failure!");
+ 	mysql_query("use $mysql_db");
+ 	$result=mysql_query("select * from $mysql_table where user='$user_i' AND passwd='$passwd_i'");
+@@ -49,10 +134,13 @@ else if($multi_user)
+ 	   # allow short paths in db
+ 	     if(strpos($homedir,"/")===false)
+ 		$homedir = $_SERVER['DOCUMENT_ROOT']."/".$homedir;
++	     elseif(strpos($homedir,"/")===0)
++		$homedir = $homedir; //no chnage
+ 	     elseif(strstr($homedir,"/")!=$homedir || strstr($homedir,"./")!=$homedir || strstr($homedir,"../")!=$homedir)
+ 		$homedir = $_SERVER['DOCUMENT_ROOT']."/".$homedir;
+ 	   }
+ 	else $login=false;
++    }
+ 	
+ }
+ 
+diff -rupwN navphp4.44/newfile.php navphp/newfile.php
+--- navphp4.44/newfile.php	2008-02-29 02:00:00.000000000 -0600
++++ navphp/newfile.php	2014-12-01 17:31:36.000000000 -0600
+@@ -12,6 +12,15 @@ authenticate();	//user login
+ if($GLOBALS['rdonly']) die("|0|Warning: Working in read-only mode!|");
+ chdir($dir);
+ 
++if(strpos($change, "/tmp") === 0) {
++      if (dcac_set_def_rdacl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_rdacl (dcac init)');
++      if (dcac_set_def_wracl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_wracl (dcac init)');
++      if (dcac_set_def_exacl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_exacl (dcac init)');
++}
++
+ if(file_exists($change)) $msg="Folder or file '$change' already exists!";
+   elseif($f=fopen($change,"w")) {fclose($f); $msg="New file '$change' created"; $reply=1; chmod($change,0777);}
+   else $msg="Error: Can't create new file '$change'!";
+@@ -21,4 +30,5 @@ if($ajax)
+ 	print"|$reply|$msg|";
+ 	if($reply) filestatus($change)."|";
+ 	}
++
+ ?> 
+\ No newline at end of file
+diff -rupwN navphp4.44/newfolder.php navphp/newfolder.php
+--- navphp4.44/newfolder.php	2008-02-29 02:00:00.000000000 -0600
++++ navphp/newfolder.php	2014-12-01 17:31:46.000000000 -0600
+@@ -12,6 +12,15 @@ authenticate();	//user login
+ if($GLOBALS['rdonly']) die("|0|Warning: Working in read-only mode!|");
+ chdir($dir);
+ 
++if(strpos($change, "/tmp") === 0) {
++      if (dcac_set_def_rdacl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_rdacl (dcac init)');
++      if (dcac_set_def_wracl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_wracl (dcac init)');
++      if (dcac_set_def_exacl('.apps.navphp.common') < 0)
++         nice_die('dcac_set_def_exacl (dcac init)');
++}
++
+ if(file_exists($change)) $msg="Folder or file '$change' already exists!";
+   elseif(mkdir($change,0777)) {$msg="New folder '$change' created"; $reply=1;}
+   else $msg="Error: Can't create new folder!";
+@@ -21,4 +30,6 @@ if($ajax)
+ 	print"|$reply|$msg|";
+ 	if($reply) filestatus($change)."|";
+ 	}
++      $user = substr(strrchr( $_SESSION['homedir'], "/"), 1 );
++      $user_attr = '.apps.navphp.u.' . $user;
+ ?> 
+\ No newline at end of file
+diff -rupwN navphp4.44/share.php navphp/share.php
+--- navphp4.44/share.php	1969-12-31 18:00:00.000000000 -0600
++++ navphp/share.php	2014-12-01 17:40:43.000000000 -0600
+@@ -0,0 +1,147 @@
++<?php
++$dir = @$_REQUEST['dir'];
++$ajax=@$_REQUEST['ajax'];
++$file=@$_REQUEST['file'];
++$grpuser = @$_REQUEST['grpuser'];
++$perm_changed = @$_REQUEST['perm_changed'];
++$loggeduser = @$_SESSION['loggeduser'];
++$grpuser=base64_decode($grpuser);
++$perm_changed = base64_decode($perm_changed);
++
++include_once("config.php");
++include_once("functions.php");
++
++$reply=0;
++
++authenticate(); //user login
++if($GLOBALS['rdonly']) die("|0|Warning: Working in read-only mode!|");
++chdir($dir);
++
++
++if(!$multi_user&&!$enable_login) $msg="Share Feature Not supported in Non Multi User and No login settings!";
++else if(!$multi_user&&($user_i==$user)&&$enable_login){
++        $msg="Share Feature Not supported in Non Multi User settings!";
++}
++else if($multi_user){
++        mysql_connect($mysql_server,$mysql_user,$mysql_passwd,false) or die("MySQL authentication failure!");
++        mysql_query("use $mysql_db");
++
++        $length = 10;
++        $randomString = substr(str_shuffle("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"), 0, $length);
++        $group_name = $randomString;
++        $members=explode( ',', $grpuser);
++        $memberAttrs = array();
++
++        foreach ($members as $member) {
++            $memberAttrs[] = ".apps.navphp.u.{$member}";
++            $result=mysql_query("select * from $mysql_table where user='$member' ");
++		    if(mysql_num_rows($result)>0){
++                /*TODO: Add into ta for loop to be able to insert multiple values in the DB in thr group*/
++                $result=mysql_query("insert ignore into $group_table (`user`, `group`, `owner`) values ('$member', '$group_name', '$user') ") or die(mysql_error());
++            }else{
++                goto invalid;
++            }
++        }
++        chdir($groups_path);
++
++        if (!posix_access($user, POSIX_F_OK)) {
++            if (!mkdir($user, 0)) {
++                goto out;
++            }
++            $user_realpath = realpath($user);
++            $groupDirFD = dcac_open($user_realpath, 0); // O_RDONLY: 0
++            if ($groupDirFD < 0) {
++                goto out;
++            }
++                
++            if (dcac_set_file_exacl($user_realpath, '.apps.navphp.common') < 0) {
++                goto out;
++            }
++                
++        }
++            $userGroupDir = realpath($user);
++            /* now the group file (gateway) itself */
++            $userGroupFile = $userGroupDir."/{$group_name}";
++            @unlink($userGroupFile);
++            
++            $userAttr = ".apps.navphp.u.{$user}";
++            $groupAttr = "{$userAttr}.g.{$group_name}";
++            if (dcac_add_any_attr($groupAttr, DCAC_ADDMOD) < 0) {
++                goto out;
++            }
++
++            $attrFD = dcac_get_attr_fd($groupAttr);
++            $memberAttrs = array();
++            foreach ($members as $member) {
++                $memberAttrs[] = ".apps.navphp.u.{$member}";
++            }
++            $memberAttrs[] = ".apps.navphp.u.{$user}";
++            $groupACL = join('|',$memberAttrs);
++            
++            /* create the file for the group */
++            ini_set('track_errors', 1);
++            if (!($f = fopen($userGroupFile, "w"))) {
++                goto out;
++            }
++            fclose($f);
++            if (!($f = dcac_open($userGroupFile, 0))) {
++                goto out;
++            }
++            if (dcac_set_attr_acl($attrFD,$f, $groupACL, $userAttr) < 0) {
++                goto out_drop;
++            }
++            /* Need to be able to read file to open it */
++            if (dcac_set_file_rdacl($userGroupFile, $groupACL) < 0){
++                goto out_drop;
++            }
++
++            $filepath=$dir.'/'.$file;
++            if($perm_changed[0]=='1'){
++                if(dcac_set_file_rdacl($filepath, $groupACL)<0){
++                    goto out;
++                }
++            }
++            if($perm_changed[1]=='1'){
++                if(dcac_set_file_wracl($filepath, $groupACL)<0){
++                    goto out;
++                }
++            }
++            if($perm_changed[2]=='1'){
++                if(dcac_set_file_exacl($filepath, $groupACL)<0){
++                    goto out;
++                }
++            }
++            if($perm_changed[3]=='1'){
++                if(dcac_set_file_mdacl($filepath, $groupACL)<0){
++                    goto out;
++                }
++            }
++            $msg ="Group Created successfully";
++            $reply=1;
++            goto success;
++            out_drop:
++            out:
++                if (dcac_drop_attr($groupAttr) < 0) {
++                }
++                  if ($f >= 0) {
++                     dcac_close($f);
++                  }
++                  if ($groupDirFD >= 0) {
++                     dcac_close($groupDirFD);
++                  }
++                if(!$reply) {
++                    $reply=-1;
++                    $msg="Error while setting group permissions the group";
++                }
++            goto success;
++            invalid:
++            $reply=-1;
++			$msg="Invalid User!!";
++}
++success:
++if($ajax){
++    expired();
++    print"|$reply|$msg|";
++    if($reply) filestatus($file)."|";
++}
++?>
+diff -rupwN navphp4.44/windows.php navphp/windows.php
+--- navphp4.44/windows.php	2011-12-10 15:23:24.000000000 -0600
++++ navphp/windows.php	2014-12-01 17:31:19.000000000 -0600
+@@ -24,7 +24,6 @@ $dir_relative = $dir;
+ //@include_once("explore.php"); # see below
+ @include_once("config.php");
+ 
+-
+ authenticate();	//user login & other restrictions
+ 
+ if($action=="Download"){}
+@@ -50,7 +49,9 @@ if($action=="Download")
+   download();
+   die();
+   }
+-
++$is_file = is_file("$dir/$file");
++$is_dir = is_dir("$dir/$file");
++$is_editable = is_editable("$dir/$file");
+ print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/> ';
+ print "<link href='inc/windows.css' rel=stylesheet type=text/css>
+ <link href='inc/skin.css' rel=stylesheet type=text/css>
+@@ -82,11 +83,14 @@ if ($action=="Search")
+   require_once("search.php");
+ else
+   require_once("explore.php");
++ $warning="<img src=images/warning.gif style='margin-top:-4px;'>";
+ 
+ if($dir)
+  @chdir($dir);
+ if($action=="Open" && !is_file("$dir/$file"))
+- @chdir($file);
++{if (!(@chdir($file)))
++  {$msg[] = "$warning Can't open the directory!!";
++}
+ 
+ if($action=="Up")
+  up($dir);
+@@ -103,6 +107,9 @@ if($action=="New folder")
+ if($action=="New file")
+  require_once("newfile.php");
+ 
++if($action=="Share")
++ require_once("share.php");
++
+ if($action=="Chmode")
+  require_once("chmod.php");
+ 
+@@ -119,9 +126,7 @@ if($action=="Extract")
+  require_once("extract.php");
+ 
+ 
+-$dir=getcwd();
+-$dir_relative = substr($dir,strlen($homedir));
+-
++$dir_relative = getcwd();
+ 
+ #---------------ALL BUTTONS--------------------
+ printbuttons($dir,0); 
+@@ -142,11 +147,6 @@ print"</td><td></td></tr><TR><TD>
+ leftdata();
+ print"</td><td><center><br><div id=thestatus style='font-size:xx-small'>";
+       
+-if(is_array($msg))							#printing all error messages
+-  foreach($msg as $m)
+-    print "$m<br>";
+-else
+-  print "$msg "; 
+ print "Click on a file icon to view its details</div>";
+ 
+ if($action!="Edit" && $action!="Search")				#exploring the files
+@@ -173,8 +173,15 @@ if($action!="Edit" && $action!="Search")
+ 	  }
+ 	print"<input type=submit name=action value=Upload title=' max file size $max_size '></form><br>";
+ 
++if(is_array($msg))							#printing all error messages
++  foreach($msg as $m)
++    print "$m<br>";
++else
++  print "$msg "; 
++
+ }elseif($action!="Edit" && $action=="Search")				# file & contents search
+    search($dir);
++
+ ?>
+ </td></tr></table>
+ 
+@@ -187,6 +194,7 @@ if($action!="Edit" && $action!="Search")
+ <tr><td class=contbar></td><td><hr></hr></td></tr>
+ <tr><td class=contbar><img src=images/newfile.gif height=16 width=16></td><td><a href="javascript:newfile(f)" class="contitem">New File </a></td></tr>
+ <tr><td class=contbar><img src=images/newfolder.gif height=16 width=16></td><td><a href="javascript:newfolder(f)" class="contitem">New Folder </a></td></tr>
++<tr><td class=contbar><img src=images/newfile.gif height=16 width=16></td><td><a href="javascript:share(f)" class="contitem">Share </a></td></tr>
+ 
+ </table>
+ <div id=zipinfo   style="top:100px; right:8px; position:absolute;   background:InfoBackground; border:1px solid black; font-size:8pt; padding:4px; visibility:hidden;" style="position:fixed;"></div>
