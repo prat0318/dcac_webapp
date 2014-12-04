@@ -3,7 +3,7 @@ Installation Instructions
 
 1) Install the dcac [patch](https://github.com/ut-osa/dcac/blob/master/patches/dcac-kernel-3.5.4.patch) to the linux [3.5.4 kernel](https://www.kernel.org/) and compile.
 
-2) Alternatively, pre-built [docker image](https://registry.hub.docker.com/u/prat0318/dcac-base/) from here can be used.
+2) Alternatively, pre-built [docker image](https://registry.hub.docker.com/u/prat0318/dcac-base/) can be used.
 
 3) Install apache, MySql and PHP on the system.
 
